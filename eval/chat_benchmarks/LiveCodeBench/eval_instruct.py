@@ -112,7 +112,7 @@ class LiveCodeBenchBenchmark(BaseBenchmark):
                     (
                         templated_messages,
                         {
-                            "do_sample": False,
+                            "do_sample": True,
                             "max_new_tokens": self.max_new_tokens,
                             "temperature": 0.7,
                             "seed": seed,
@@ -352,14 +352,14 @@ class LiveCodeBenchBenchmark(BaseBenchmark):
         cpu_count = os.cpu_count()
         ds = load_dataset(
             "livecodebench/code_generation_lite",
-            version_tag="release_v2",
+            version_tag="release_v6",
             split="test",
             trust_remote_code=True,
             cache_dir=HF_HUB_CACHE,
         )
         # Avoids "pyarrow.lib.ArrowInvalid: offset overflow while concatenating arrays" when mapping
         processed_shards = []
-        num_shards = 4
+        num_shards = 16
         for i in range(num_shards):
             shard = ds.shard(num_shards=num_shards, index=i)
             shard = shard.map(
