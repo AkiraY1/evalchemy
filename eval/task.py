@@ -59,7 +59,7 @@ class BaseBenchmark(ABC):
         return instances
 
     def _prepare_messages(
-        self, messages: List[Dict[str, str]], model: Optional[LM] = None
+        self, messages: List[Dict[str, str]], model: Optional[LM] = None, custom_chat_template = False, tokenizer = None, enable_thinking = False,
     ) -> Union[List[Dict[str, str]], str]:
         """Prepare messages with system instruction if available and apply chat template if model is provided.
 
@@ -72,8 +72,15 @@ class BaseBenchmark(ABC):
         """
         if self.system_instruction:
             messages.insert(0, {"role": "system", "content": self.system_instruction})
-
-        if model is not None:
+        
+        if custom_chat_template:
+            return tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=enable_thinking
+            )
+        elif model is not None:
             return model.apply_chat_template(messages)
 
         return messages

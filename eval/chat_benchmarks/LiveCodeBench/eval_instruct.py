@@ -11,6 +11,8 @@ from datasets import Dataset, concatenate_datasets, load_dataset
 from lm_eval.api.instance import Instance
 from lm_eval.api.model import LM
 
+from .custom_prompts import SOLVER_STDIN, SOLVER_F
+
 from eval.task import BaseBenchmark
 
 from .livecodebench_utils import lcb_run, map_to_example, post_process_code, translate_private_test_cases
@@ -68,7 +70,7 @@ class LiveCodeBenchBenchmark(BaseBenchmark):
         self.debug = debug
         self.max_new_tokens = max_tokens
         self.seed = seed
-        self.n_repeat = 6
+        self.n_repeat = 5
 
     def generate_responses(self, model: LM) -> Dict[str, Any]:
         """
@@ -92,19 +94,36 @@ class LiveCodeBenchBenchmark(BaseBenchmark):
             seed = [s + i for s in self.seed]
 
             for idx, example in enumerate(examples):
+
+                # Default prompt template
+                # if example["is_stdin"]:
+                #     prompt_text = (
+                #         "Generate an executable Python function generated from the given prompt. The function should take stdin as input and print the output. Simply call the function after the definition."
+                #         + example["prompt"]
+                #     )
+                # else:
+                #     prompt_text = (
+                #         "Generate an executable Python function generated from the given prompt. Return the function body without invoking it at the final solution."
+                #         + example["prompt"]
+                #     )
+
+                # Added by Akira for custom solver prompt templates
                 if example["is_stdin"]:
-                    prompt_text = (
-                        "Generate an executable Python function generated from the given prompt. The function should take stdin as input and print the output. Simply call the function after the definition."
-                        + example["prompt"]
-                    )
+                    prompt_text = SOLVER_STDIN.format(subproblem=example["prompt"])
                 else:
-                    prompt_text = (
-                        "Generate an executable Python function generated from the given prompt. Return the function body without invoking it at the final solution."
-                        + example["prompt"]
-                    )
+                    prompt_text = SOLVER_F.format(subproblem=example["prompt"])
+
                 messages = [{"role": "user", "content": prompt_text}]
 
-                templated_messages = self._prepare_messages(messages, model)
+                from transformers import AutoTokenizer
+                tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-8B")
+
+                templated_messages = self._prepare_messages(messages, model, custom_chat_template=True, tokenizer=tokenizer, enable_thinking=True)
+                print("enable_thinking set to True")
+
+                print("templated_messages: ",templated_messages)
+
+                print("enable_thinking set to True")
 
                 instance = Instance(
                     "generate_until",
@@ -115,6 +134,9 @@ class LiveCodeBenchBenchmark(BaseBenchmark):
                             "do_sample": True,
                             "max_new_tokens": self.max_new_tokens,
                             "temperature": 0.7,
+                            "top_p": 1.0,
+                            "top_k": 0,
+                            "min_p": 0.0,
                             "seed": seed,
                         },
                     ),
@@ -239,6 +261,7 @@ class LiveCodeBenchBenchmark(BaseBenchmark):
         # Evaluate each set of completions separately
         all_metrics = []
         run_stats = []
+        all_results = []
         num_questions = len(responses["examples"])
 
         for repeat_idx, examples in examples_by_repeat.items():
@@ -296,6 +319,8 @@ class LiveCodeBenchBenchmark(BaseBenchmark):
 
             all_metrics.append(metrics)
 
+            all_results.append(results)
+
             # Add to run_stats for precomputed_hf_lm.py compatibility
             run_stats.append(
                 {
@@ -331,8 +356,9 @@ class LiveCodeBenchBenchmark(BaseBenchmark):
 
         # Include raw results and examples in final metrics
         final_metrics["raw_metrics"] = all_metrics
-        final_metrics["examples"] = [result for result, _ in results]  # Include last run's examples
-
+        #final_metrics["examples"] = [result for result, _ in results]  # Include last run's examples
+        final_metrics["examples"] = [[result for result, _ in results] for results in all_results] # Include all run's examples (by Akira)
+        
         # Add compatibility with precomputed_hf_lm.py
         solved_avg = np.mean([result["num_solved"] for result in run_stats])
         final_metrics.update(
